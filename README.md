@@ -1,0 +1,1 @@
+# estyshop-manager
