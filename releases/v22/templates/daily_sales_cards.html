@@ -1,0 +1,20 @@
+<div class="chart-grid">
+{% for card in cards %}
+  <article class="chart-card">
+    <div class="chart-heading"><div>
+      <h2>{% if card.shop.internal_shop_id %}{{ card.shop.internal_shop_id }} {% endif %}{{ card.shop.name }}</h2>
+      <span class="type-tag {{ 'internal' if card.internal else 'external' }}">{{ '内部店铺' if card.internal else '外部店铺' }}</span>
+      {% if card.shop.operator_name %}<span class="operator-tag">{{ card.shop.operator_name }}</span>{% endif %}
+    </div><div class="chart-value finance-totals">
+      <small>最新月累计{% if card.latest %} · {{ card.latest.day }}{% endif %}</small>
+      <div><span>Sales</span> <strong>{{ '$%.2f'|format(card.latest.sales_usd) if card.latest else '—' }}</strong></div>
+      <div><span>Net Profit</span> <strong>{{ '$%.2f'|format(card.latest.net_profit_usd) if card.latest else '—' }}</strong></div>
+      <div><span>Marketing/Sales</span> <strong>{{ '%.1f%%'|format(card.latest_ratio) if card.latest_ratio is not none else '—' }}</strong></div>
+    </div></div>
+    {% if card.rows %}
+      <div class="finance-chart" data-rows='{{ card.rows|tojson }}'></div>
+      <p class="chart-note">左轴：当天 Sales / Net Profit（美元） · 右轴：当月累计 Marketing ÷ 当月累计 Sales</p>
+    {% else %}<p class="chart-empty">暂无销售额数据</p>{% endif %}
+  </article>
+{% else %}<p class="chart-empty">此分类下暂无店铺。</p>{% endfor %}
+</div>

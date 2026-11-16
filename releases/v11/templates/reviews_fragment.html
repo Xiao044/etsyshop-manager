@@ -1,0 +1,9 @@
+<div class="review-list-heading">{{ shop.name }} · {{ '非五星评价' if bad_only else '已收录评价' }}（{{ reviews|length }}）</div>
+{% for review in reviews %}
+<article class="review-entry">
+  <div class="review-entry-top"><strong>{{ review.buyer_name or '匿名买家' }}</strong><span>{{ review.review_date or review.review_date_raw or '日期未知' }}</span><span class="review-stars" aria-label="{{ review.stars }} 星">{{ '★' * review.stars }}{{ '☆' * (5-review.stars) }}</span></div>
+  {% if review.review_text %}<p class="review-text">{{ review.review_text }}</p>{% endif %}
+  {% if review.photos %}<div class="review-photos">{% for photo in review.photos %}<a href="{{ photo }}" target="_blank" rel="noopener noreferrer"><img src="{{ photo }}" alt="买家评价图片" loading="lazy"></a>{% endfor %}</div>{% endif %}
+  {% if review.response_date or review.response_text %}<div class="seller-response"><strong>卖家回复{% if review.response_date %} · {{ review.response_date }}{% elif review.response_date_raw %} · {{ review.response_date_raw }}{% endif %}</strong><p>{{ review.response_text or '（无文字）' }}</p></div>{% endif %}
+</article>
+{% else %}<p class="review-empty">暂无已收录的{{ '非五星评价' if bad_only else '评价' }}。</p>{% endfor %}

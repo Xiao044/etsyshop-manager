@@ -1,0 +1,13 @@
+[Unit]
+Description=Collect public Etsy shop counters
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Environment=ETSY_TOOLS_DATA_DIR=/var/lib/etsy-tools
+WorkingDirectory=/opt/etsy-tools/releases/v11
+ExecStart=/usr/bin/flock -n /run/etsy-collector.lock /usr/bin/xvfb-run -a /usr/bin/python3 /opt/etsy-tools/releases/v11/collector.py
+TimeoutStartSec=45min
+

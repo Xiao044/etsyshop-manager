@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>数据看板 · Etsy 工具台</title><link rel="stylesheet" href="{{ url_for('static', filename='site.css') }}"><script src="{{ url_for('static', filename='dashboard.js') }}" defer></script></head>
+<body><div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">E</span><span><strong>Etsy 工具台</strong><small>店铺数据工作区</small></span></div>
+    <div class="side-label">工具</div>
+    <a class="side-item side-link" href="{{ url_for('index') }}"><span class="side-icon">▦</span> 店铺管理</a>
+    <div class="side-item active"><span class="side-icon">▥</span> 数据看板</div>
+    <div class="sidebar-note">历史示例数据已清楚标记；每天真实采集会继续写入数据库。</div>
+  </aside>
+  <main class="main"><header class="topbar"><span>数据看板</span><span class="topbar-badge">新加坡服务器</span></header>
+    <div class="content dashboard-content">
+      <div class="page-heading"><div><p class="eyebrow">SHOP ANALYTICS</p><h1>店铺数据走势</h1><p class="subtitle">查看各店铺近 {{ days }} 天的每日数据。</p></div><div class="count-card"><strong>{{ cards|length }}</strong><span>家店铺</span></div></div>
+      <div class="simulation-banner" role="note"><strong>示例数据</strong>：历史中包含 30 天模拟数据；每天真实采集的数据会陆续加入。各店铺下方标出模拟与真实天数，模拟记录不能作为真实经营结果。</div>
+      <div class="dashboard-controls"><div class="metric-tabs">
+        {% for key, label in metrics.items() %}<a class="metric-tab{% if key == selected %} selected{% endif %}" href="{{ url_for('dashboard', metric=key, scope=scope, days=days, operator=operator_id) }}">{{ label }}</a>{% endfor %}
+      </div><div class="scope-tabs">
+        <a class="scope-tab{% if scope == 'all' %} selected{% endif %}" href="{{ url_for('dashboard', metric=selected, scope='all', days=days, operator=operator_id) }}">全部</a>
+        <a class="scope-tab{% if scope == 'internal' %} selected{% endif %}" href="{{ url_for('dashboard', metric=selected, scope='internal', days=days, operator=operator_id) }}">内部</a>
+        <a class="scope-tab{% if scope == 'external' %} selected{% endif %}" href="{{ url_for('dashboard', metric=selected, scope='external', days=days, operator=operator_id) }}">外部</a>
+      </div></div>
+      <div class="dashboard-controls secondary-controls"><div class="period-tabs">
+        <a class="metric-tab{% if days == 30 %} selected{% endif %}" href="{{ url_for('dashboard', metric=selected, scope=scope, days=30, operator=operator_id) }}">最近 30 天</a>
+        <a class="metric-tab{% if days == 7 %} selected{% endif %}" href="{{ url_for('dashboard', metric=selected, scope=scope, days=7, operator=operator_id) }}">最近 7 天</a>
+      </div><form class="operator-filter" action="{{ url_for('dashboard') }}" method="get"><input type="hidden" name="metric" value="{{ selected }}"><input type="hidden" name="scope" value="{{ scope }}"><input type="hidden" name="days" value="{{ days }}"><label for="operator-filter">运营</label><select id="operator-filter" name="operator"><option value="">全部运营</option>{% for person in operators %}<option value="{{ person.id }}"{% if operator_id == person.id|string %} selected{% endif %}>{{ person.name }}</option>{% endfor %}</select></form></div>
+      <div class="chart-grid">{% for card in cards %}
+        <article class="chart-card"><div class="chart-heading"><div><h2>{% if card.shop.internal_shop_id %}{{ card.shop.internal_shop_id }} {% endif %}{{ card.shop.name }}</h2><span class="type-tag {{ 'internal' if card.internal else 'external' }}">{{ '内部店铺' if card.internal else '外部店铺' }}</span>{% if card.shop.operator_name %}<span class="operator-tag">{{ card.shop.operator_name }}</span>{% endif %}</div><div class="chart-value"><strong>{{ card.current if card.current is not none else '—' }}</strong><small>{{ metrics[selected] }}</small></div></div>
+        {% if card.points %}<div class="chart-area"><svg class="trend-chart" viewBox="0 0 740 190" role="img" aria-label="{{ card.shop.name }}的{{ metrics[selected] }}走势"><line x1="24" y1="169" x2="716" y2="169" stroke="#e8edf0"/><line x1="24" y1="104" x2="716" y2="104" stroke="#eef1f3"/><line x1="24" y1="39" x2="716" y2="39" stroke="#eef1f3"/><polyline points="{{ card.points }}" fill="none" stroke="#dc6a3c" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>{% for point in card.chart_days %}<rect class="chart-zone" x="{{ point.zone_x }}" y="0" width="{{ point.zone_width }}" height="190" tabindex="0" data-x="{{ point.x }}" data-y="{{ point.y }}" data-day="{{ point.day }}" data-value="{{ point.value }}" data-kind="{{ '模拟数据' if point.simulated else '真实采集' }}" aria-label="{{ point.day }}，{{ metrics[selected] }} {{ point.value }}，{{ '模拟数据' if point.simulated else '真实采集' }}"><title>{{ point.day }} · {{ metrics[selected] }} {{ point.value }} · {{ '模拟数据' if point.simulated else '真实采集' }}</title></rect>{% endfor %}<circle class="chart-active-dot" r="10" cx="0" cy="0"/></svg><div class="chart-tooltip" role="status" hidden></div></div>
+        <div class="chart-foot"><span>{{ card.start }} → {{ card.end }}</span><span>总增量 {{ card.change }}</span></div><div class="daily-average">日均增量 <strong>{{ '%.2f'|format(card.average) if card.average is not none else '—' }}</strong></div><p class="chart-note">{% if selected == 'bad_review_count' %}根据已收录评价的实际日期绘制{% else %}{{ card.simulated }} 天模拟数据 · {{ card.days - card.simulated }} 天真实数据{% endif %}</p>
+        {% else %}<p class="chart-empty">暂无采集数据</p>{% endif %}
+        {% if selected in ('review_count', 'bad_review_count') %}<details class="review-disclosure" data-url="{{ url_for('shop_reviews', shop_id=card.shop.id, bad=1 if selected == 'bad_review_count' else 0) }}"><summary>{{ '显示所有差评' if selected == 'bad_review_count' else '显示所有评价' }}</summary><div class="review-list-body" aria-live="polite"></div></details><p class="review-scope-note">{{ '差评数为已收录评价中非五星的数量；' if selected == 'bad_review_count' else '' }}目前已收录 {{ card.review_total }} 条评价。新店铺先采集最近 50 条，之后每天补充新增评价。</p>{% endif %}</article>
+      {% else %}<p class="chart-empty">此分类下暂无店铺。</p>{% endfor %}</div>
+    </div>
+  </main>
+</div></body></html>

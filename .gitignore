@@ -1,0 +1,82 @@
+# Secrets, private configuration and keys
+.env
+.env.*
+*.env
+!.env.example
+!*.env.example
+secrets/
+credentials/
+session_secret
+session_secret.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Runtime databases, collected data and backups
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+/data/
+/instance/
+backups/
+review_images/
+*.bak
+*.backup
+*.dump
+
+# Python environments, bytecode and tool caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime logs, temporary files and browser profiles
+*.log
+*.pid
+*.sock
+logs/
+/tmp/
+/cache/
+.cache/
+browser-profile/
+chromium-profile/
+
+# Local editor and OS metadata
+.idea/
+.vscode/
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Generated packages and archives
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+/dist/
+/build/
+
+# Retain only the deployed collector and website release directories
+/releases/*
+!/releases/v11/
+!/releases/v22/
+
+# Simulated/demo data generation scripts and payload directories
+seed_*.py
+*_seed.py
+demo_data/
+mock_data/
+simulated_data/

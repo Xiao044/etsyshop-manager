@@ -1,0 +1,21 @@
+[Unit]
+Description=Private Etsy tools shop manager
+After=network.target
+
+[Service]
+Type=simple
+User=etsytools
+Group=etsytools
+WorkingDirectory=/opt/etsy-tools/releases/v11
+Environment=ETSY_TOOLS_DATA_DIR=/var/lib/etsy-tools
+ExecStart=/usr/bin/gunicorn --workers 2 --bind 127.0.0.1:8765 --access-logfile - --error-logfile - app:app
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/etsy-tools
+
+[Install]
+WantedBy=multi-user.target
