@@ -1,4 +1,4 @@
-# estyshop-manager
+# etsyshop-manager
 
 Etsy 店铺管理、公开指标采集、评价同步和数据看板项目。
 
@@ -56,7 +56,7 @@ releases/
 ## 版本控制
 
 - 主分支为 `main`，保留 GitHub 仓库已有的初始提交。
-- 远程地址：`https://github.com/Xiao044/estyshop-manager.git`。
+- 远程地址：`https://github.com/Xiao044/etsyshop-manager.git`。
 - 旧发布版本在删除前保留了仓库外的回滚压缩包；压缩包不上传。
 - 本次不修改当前版本业务代码、不重启服务、不更改采集计划。
 - Git 仓库不是生产数据库备份，恢复环境仍需单独恢复运行配置、秘密信息和数据。
