@@ -5,27 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>店铺管理 · Etsy 工具台</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='site.css') }}">
+
+<script src="{{ url_for('static', filename='shop-actions.js') }}" defer></script>
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">E</span><span><strong>Etsy 工具台</strong><small>店铺数据工作区</small></span></div>
-      <div class="side-label">工具</div>{% include 'navigation.html' %}<div class="sidebar-note">这里管理每日需要采集的店铺。数据走势可在“数据看板”查看。</div>
-    </aside>
+    {% include 'sidebar.html' %}
     <main class="main">
-      <header class="topbar"><span>店铺管理</span><span class="topbar-badge">新加坡服务器</span></header>
       <div class="content">
-        <div class="page-heading">
-          <div><p class="eyebrow">SHOP DIRECTORY</p><h1>店铺管理</h1><p class="subtitle">集中维护需要观察的 Etsy 店铺链接。</p></div>
-          <div class="count-card"><strong>{{ shops|length }}</strong><span>家店铺在名单中</span></div>
-        </div>
-
+        <div class="page-heading"><h1>店铺管理</h1></div>
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% for category, message in messages %}<div class="notice {{ category }}" role="status">{{ message }}</div>{% endfor %}
         {% endwith %}
 
         <section class="panel add-panel" aria-labelledby="add-title">
-          <div class="section-heading"><div><h2 id="add-title">添加店铺</h2><p>店铺ID和运营可留空，之后随时补充。已有运营可直接选择，输入新名字会自动创建。</p></div></div>
+          <div class="section-heading"><h2 id="add-title">添加店铺</h2></div>
           <form action="{{ url_for('add_shop') }}" method="post" class="add-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="field shop-url-field"><label for="shop-url">Etsy 店铺链接 <span>必填</span></label><input id="shop-url" name="shop_url" type="url" inputmode="url" required placeholder="https://www.etsy.com/shop/FrameLessShop" autocomplete="off"></div>
@@ -37,21 +31,20 @@
         </section>
 
         <section class="panel list-panel" aria-labelledby="list-title">
-          <div class="section-heading"><div><h2 id="list-title">采集名单</h2><p>店铺ID和运营都为空时标为外部店铺。修改后点“保存”；删除后历史记录仍保留。</p></div><span class="list-count">{{ shops|length }} 家</span></div>
+          <div class="section-heading"><h2 id="list-title">采集名单</h2><span class="list-count">{{ shops|length }} 家</span></div>
           {% if shops %}
           <div class="table-wrap"><table><thead><tr><th>店铺</th><th>店铺ID</th><th>运营</th><th>店铺主页</th><th>添加日期</th><th class="action-col">操作</th></tr></thead><tbody>
             {% for shop in shops %}<tr>
-              <td><form id="edit-{{ shop.id }}" action="{{ url_for('update_shop', shop_id=shop.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"></form><span class="shop-avatar">{{ shop.name[0]|upper }}</span><span class="shop-identity"><strong>{{ shop.name }}</strong><small class="type-tag {{ 'external' if not shop.internal_shop_id and not shop.operator_name else 'internal' }}">{{ '外部店铺' if not shop.internal_shop_id and not shop.operator_name else '内部店铺' }}</small></span></td>
+              <td><form id="edit-{{ shop.id }}" action="{{ url_for('update_shop', shop_id=shop.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"></form><span class="shop-avatar">{{ shop.name[0]|upper }}</span><span class="shop-identity"><a class="shop-name-link" href="{{ url_for('shop_data', shop_id=shop.id) }}" aria-label="查看 {{ shop.name }} 的单店数据"><strong>{{ shop.name }}</strong></a></span></td>
               <td><label class="sr-only" for="id-{{ shop.id }}">{{ shop.name }} 的店铺ID</label><input class="table-input id-input" id="id-{{ shop.id }}" type="text" form="edit-{{ shop.id }}" name="shop_id" maxlength="80" value="{{ shop.internal_shop_id or '' }}" placeholder="未填写"></td>
               <td><label class="sr-only" for="operator-{{ shop.id }}">{{ shop.name }} 的运营</label><input class="table-input operator-input" id="operator-{{ shop.id }}" type="text" form="edit-{{ shop.id }}" name="operator" list="operator-options" maxlength="50" value="{{ shop.operator_name or '' }}" placeholder="未填写" autocomplete="off"></td>
-              <td><a href="{{ shop.url }}" target="_blank" rel="noopener noreferrer">{{ shop.url }}</a></td><td>{{ shop.created_at|beijing_date }}</td><td class="action-col"><div class="row-actions"><button class="save-button" type="submit" form="edit-{{ shop.id }}">保存</button><form action="{{ url_for('delete_shop', shop_id=shop.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="text-button" type="submit" aria-label="删除 {{ shop.name }}">删除</button></form></div></td>
+              <td><a href="{{ shop.url }}" target="_blank" rel="noopener noreferrer">{{ shop.url }}</a></td><td>{{ shop.created_at|beijing_date }}</td><td class="action-col"><div class="row-actions"><button class="save-button" type="submit" form="edit-{{ shop.id }}">保存</button><form action="{{ url_for('delete_shop', shop_id=shop.id) }}" method="post" data-delete-shop-form data-shop-name="{{ shop.name }}"><input type="hidden" name="confirm_permanent" value="0"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="text-button" type="submit" aria-label="永久删除 {{ shop.name }}" title="永久删除店铺及数据库关联数据，无法撤销">永久删除</button></form></div></td>
             </tr>{% endfor %}
           </tbody></table></div>
           {% else %}
-          <div class="empty-state"><div class="empty-icon">▦</div><strong>名单还是空的</strong><p>在上方添加第一家店铺，之后会显示在这里。</p></div>
+          <div class="empty-state"><div class="empty-icon">▦</div><strong>请先添加店铺</strong></div>
           {% endif %}
         </section>
-        <p class="footer-note">名单中的店铺每天北京时间 18:15 自动采集。数据走势请前往“数据看板”。</p>
       </div>
     </main>
   </div>

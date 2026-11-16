@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from access_guard import AccessRestrictedError, ensure_page_accessible
+
 
 IDS = itertools.count(10000)
 EXTRACT_JS = r"""JSON.stringify((() => {
@@ -38,6 +40,7 @@ EXTRACT_JS = r"""JSON.stringify((() => {
   const next = [...(section?.querySelectorAll('a[data-page]') || [])]
     .find(a => /Next page/i.test(a.textContent || ''));
   return {
+    page_text: (document.body?.innerText || '').slice(0, 4096),
     sort: section?.querySelector('#sort-reviews-menu .wt-menu__trigger__label')?.innerText?.trim() || '',
     items,
     next_page: next?.getAttribute('data-page') || null
@@ -105,7 +108,9 @@ def evaluate(command, ws, expression):
 
 
 def read_state(command, ws):
-    return json.loads(evaluate(command, ws, EXTRACT_JS))
+    state = json.loads(evaluate(command, ws, EXTRACT_JS))
+    ensure_page_accessible(state.get("page_text", ""))
+    return state
 
 
 def choose_most_recent(command, ws):
@@ -137,6 +142,8 @@ def choose_most_recent(command, ws):
 
 
 def next_page(command, ws, previous_ids):
+    # Check the current page before issuing another network-producing click.
+    read_state(command, ws)
     expression = """(() => {
       const link = [...document.querySelectorAll('#reviews a[data-page]')]
         .find(a => /Next page/i.test(a.textContent || ''));
@@ -224,6 +231,7 @@ def sync_shop_reviews(command, db_path, data_dir, ws, shop_id, run_id, known_rev
         VALUES(?,?,?,'running')""", (run_id, shop_id, timestamp())).lastrowid
     db.commit()
     pages = added = 0
+    error_code = None
     duplicate = False
     status = "completed"
     error = None
@@ -255,12 +263,17 @@ def sync_shop_reviews(command, db_path, data_dir, ws, shop_id, run_id, known_rev
                 elif not first_sync or added < remaining:
                     store_review(db, shop_id, item, image_directory)
                     added += 1
+                # Image downloads for the next item must not hold this write lock.
+                db.commit()
             db.commit()
             if duplicate or (first_sync and added >= remaining) or not state["next_page"]:
                 break
             state = next_page(command, ws, ids)
         else:
             status, error = "partial", "达到 100 页安全上限，可能仍有未采集评价"
+    except AccessRestrictedError as exc:
+        status, error = "blocked", str(exc)[:500]
+        error_code = exc.code
     except Exception as exc:
         status, error = "failed", str(exc)[:500]
     finally:
@@ -270,4 +283,4 @@ def sync_shop_reviews(command, db_path, data_dir, ws, shop_id, run_id, known_rev
         db.commit()
         db.close()
     return {"status": status, "pages": pages, "added": added,
-            "duplicate_stop": duplicate, "error": error}
+            "duplicate_stop": duplicate, "error": error, "error_code": error_code}

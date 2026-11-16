@@ -1,0 +1,117 @@
+{% import "item_counts_macros.html" as products %}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ shop.name ~ ' · ' if shop else '' }}单店数据 · Etsy 工具台</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='site.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='shop-data.css') }}">
+  <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='finance.js') }}" defer></script>
+
+<script src="{{ url_for('static', filename='shop-actions.js') }}" defer></script>
+</head>
+<body class="shop-data-page">
+<div class="app-shell">
+  {% include 'sidebar.html' %}
+  <main class="main">
+    <div class="content shop-data-content">
+      <div class="page-heading">
+        <h1>单店数据</h1>
+        <a class="back-to-dashboard" href="{{ url_for('dashboard', days=days) }}">← 返回多店看板</a>
+      </div>
+      {% if shop %}
+      <section class="panel shop-toolbar" aria-label="选择店铺">
+        <div class="shop-control-row">
+          <form class="shop-switcher" action="{{ url_for('shop_data') }}" method="get">
+            <input type="hidden" name="days" value="{{ days }}">
+            <label for="shop-data-select">选择店铺</label>
+            <select id="shop-data-select" name="shop_id">
+              {% for item in shops %}<option value="{{ item.id }}"{% if item.id == shop.id %} selected{% endif %}>{{ (item.internal_shop_id ~ ' · ') if item.internal_shop_id else '' }}{{ item.name }}</option>{% endfor %}
+            </select>
+            <button class="shop-select-button" type="submit">查看</button>
+          </form>
+        </div>
+        <div class="shop-context">
+          <div class="shop-context-identity"><span class="shop-avatar">{{ shop.name[0]|upper }}</span><div><h2>{{ shop.name }}</h2><div class="shop-meta">{% if shop.internal_shop_id %}<span>ID：{{ shop.internal_shop_id }}</span>{% endif %}{% if shop.operator_name %}<span>运营：{{ shop.operator_name }}</span>{% endif %}</div></div></div>
+          <div class="shop-context-links">{% with delete_shop=shop %}{% include 'shop_delete_button.html' %}{% endwith %}<span>{% if latest_snapshot %}快照：{{ latest_snapshot.day }}{% endif %}</span><a href="{{ shop.url }}" target="_blank" rel="noopener noreferrer">Etsy 店铺主页 ↗</a></div>
+        </div>
+      </section>
+
+      <div class="shop-section-heading"><h2>今日数据</h2><time datetime="{{ last_day }}">{{ last_day }}</time></div>
+      <section class="metric-overview" aria-label="七项指标当日数据与累计值">
+        {% for metric in metrics %}
+        <a class="metric-overview-card metric-{{ metric.key }}" href="#metric-{{ metric.key }}" aria-labelledby="overview-title-{{ metric.key }}">
+          <div class="overview-label"><h3 id="overview-title-{{ metric.key }}">{{ metric.label }}</h3><span class="overview-arrow" aria-hidden="true">↗</span></div>
+          {% if metric.key == 'item_count' %}
+          {{ products.summary(metric.item_counts, last_day, format_value, compact=true) }}
+          {% else %}
+          <div class="overview-kicker"><span class="overview-period">{{ metric.today_label }}</span>{% if metric.today_simulated %}<span class="data-badge simulated">模拟</span>{% endif %}</div>
+          <strong class="overview-value{% if metric.today_value is none %} overview-value-missing{% endif %}">{% if metric.today_value is not none and metric.today_value > 0 and metric.key not in ('daily_sales', 'rating') %}+{% endif %}{{ format_value(metric.today_value, metric.format) }}</strong>
+          <div class="overview-total">
+            <div class="overview-total-row"><span>{{ metric.total_label }}</span><strong>{{ format_value(metric.total_value, metric.format) }}{% if metric.key == 'rating' and metric.total_value is not none %}<small> / 5</small>{% endif %}</strong></div>
+            {% if metric.total_simulated or (metric.total_day and metric.total_day != last_day) %}
+            <div class="overview-total-meta">{% if metric.total_simulated %}<span class="overview-total-simulated">模拟总值</span>{% endif %}{% if metric.total_day and metric.total_day != last_day %}<span>截至 <time datetime="{{ metric.total_day }}">{{ metric.total_day }}</time></span>{% endif %}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+        </a>
+        {% endfor %}
+      </section>
+
+      <div id="shop-trends" class="shop-section-heading shop-trends-heading">
+        <div>
+          <h2>指标走势</h2>
+          <span class="shop-trends-range">{{ first_day }} — {{ last_day }} · 北京时间</span>
+        </div>
+        <nav class="period-tabs" aria-label="查看时间范围">
+          {% for period in (7, 30) %}
+          <a class="metric-tab{% if days == period %} selected{% endif %}" href="{{ url_for('shop_data', shop_id=shop.id, days=period, _anchor='shop-trends') }}"{% if days == period %} aria-current="true"{% endif %}>最近 {{ period }} 天</a>
+          {% endfor %}
+        </nav>
+      </div>
+      {% if not has_data %}<div class="notice info" role="status">暂无采集数据</div>{% endif %}
+      <div class="chart-grid shop-charts">
+        {% for metric in metrics %}
+        <article class="chart-card metric-chart metric-{{ metric.key }}" id="metric-{{ metric.key }}">
+          <div class="chart-heading"><div><h2><span class="metric-color-dot" aria-hidden="true"></span>{{ metric.label }}{% if metric.key == 'daily_sales' and has_finance_data %}<span class="data-badge simulated">模拟 · USD</span>{% elif metric.key == 'bad_review_count' %}<span class="data-badge archived">已收录 · 非五星</span>{% endif %}</h2></div>{% if metric.key != 'item_count' and metric.stat_value is not none %}<div class="metric-period-stat"><strong>{{ format_value(metric.stat_value, metric.format) }}</strong><small>{{ metric.stat_label }}</small></div>{% endif %}</div>
+          {% if metric.key == 'daily_sales' %}
+            {% if metric.has_finance %}
+              {% include 'finance_legend.html' %}
+              <div class="finance-chart" data-rows='{{ metric.finance_rows|tojson }}'></div>
+            {% else %}<div class="metric-empty"><strong>{{ '区间内暂无数据' if has_finance_data else '财务数据尚未接入' }}</strong></div>{% endif %}
+          {% elif metric.key == 'item_count' %}
+            {{ products.chart(metric.item_counts, first_day, last_day, format_value) }}
+          {% elif metric.chart_days %}
+            <div class="chart-area">
+              <svg class="trend-chart metric-trend" viewBox="0 0 740 205" role="img" aria-label="{{ shop.name }}的{{ metric.label }}{{ '当日新增' if metric.key == 'bad_review_count' else ('当日净增量' if metric.daily else '') }}走势">
+                <g class="chart-axis" fill="#8994a1" font-size="12"><text x="80" y="18">{{ '当日新增' if metric.key == 'bad_review_count' else ('当日净增' if metric.daily else '评分') }}</text>{% for tick in metric.axis_ticks %}<line x1="80" x2="716" y1="{{ tick.y }}" y2="{{ tick.y }}" stroke="#e8edf0"/><text x="66" y="{{ tick.y }}" dy=".33em" text-anchor="end">{{ tick.label }}</text>{% endfor %}<text x="80" y="196">{{ first_day[5:] }}</text><text x="716" y="196" text-anchor="end">{{ last_day[5:] }}</text></g>
+                <path class="metric-line" d="{{ metric.points }}" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+                {% for point in metric.chart_days %}<circle class="metric-point{% if point.simulated %} simulated-point{% endif %}" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5"/>{% endfor %}
+                {% for point in metric.chart_days %}<rect class="chart-zone" x="{{ point.zone_x }}" y="25" width="{{ point.zone_width }}" height="150" tabindex="0" data-x="{{ point.x }}" data-y="{{ point.y }}" data-label="{{ metric.label }}" data-day="{{ point.day }}" data-value="{{ point.formatted }}" data-kind="{{ '模拟数据' if point.simulated else '' }}" aria-label="{{ point.day }}，{{ metric.label }} {{ point.formatted }}{{ '，模拟数据' if point.simulated else '' }}"></rect>{% endfor %}
+                <circle class="chart-active-dot" r="7" cx="0" cy="0"/>
+              </svg>
+              {% set last_point = metric.chart_days|last %}
+              <div class="chart-readout" aria-live="polite"><div class="readout-date">{{ last_point.day }}</div><div class="readout-value">{{ metric.label }}：{{ last_point.formatted }}</div><div class="readout-kind">{{ '模拟数据' if last_point.simulated else '' }}</div></div>
+            </div>
+            {% if metric.simulated_days or metric.daily %}<div class="metric-chart-footer">{% if metric.simulated_days %}<span class="data-badge simulated">含模拟</span>{% endif %}{% if metric.daily %}<span class="metric-average">日均{{ '新增' if metric.key == 'bad_review_count' else '净增' }} <strong>{{ '%.2f'|format(metric.average) }}</strong></span>{% endif %}</div>{% endif %}
+          {% else %}
+            <div class="metric-empty"><strong>暂无走势</strong></div>
+          {% endif %}
+          {% if metric.key in ('review_count', 'bad_review_count') %}
+          <details class="review-disclosure" data-url="{{ url_for('shop_reviews', shop_id=shop.id, bad=1 if metric.key == 'bad_review_count' else 0) }}"><summary>{{ '已收录差评' if metric.key == 'bad_review_count' else '已收录评价（' ~ review_total ~ '）' }}</summary><div class="review-list-body" aria-live="polite"></div></details>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </div>
+
+
+      {% else %}
+      <section class="panel"><div class="empty-state"><div class="empty-icon">▦</div><strong>请先添加店铺</strong><a class="metric-tab empty-add-link" href="{{ url_for('index') }}">前往店铺管理</a></div></section>
+      {% endif %}
+    </div>
+  </main>
+</div>
+</body>
+</html>

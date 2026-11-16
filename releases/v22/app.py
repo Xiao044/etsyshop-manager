@@ -6,17 +6,25 @@ import os
 import re
 import secrets
 import sqlite3
+import sys
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from flask import Flask, abort, flash, redirect, render_template, request, send_from_directory, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
-from finance_metrics import daily_finance
+from finance_metrics import daily_finance, valid_finance_rows
 from counter_metrics import daily_changes, chart_axis
+from shop_metrics import build_shop_data, build_item_counts, format_value
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from etsy_runtime.queue import Store, QueueError
+from etsy_runtime.schema import ensure_item_counts_schema
 
 
-DATA_DIR = Path(os.environ.get("ETSY_TOOLS_DATA_DIR", "/var/lib/etsy-tools"))
+DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data" if os.name == "nt" else Path("/var/lib/etsy-tools")
+DATA_DIR = Path(os.environ.get("ETSY_TOOLS_DATA_DIR", str(DEFAULT_DATA_DIR))).resolve()
 DB_PATH = DATA_DIR / "shops.sqlite3"
 SECRET_PATH = DATA_DIR / "session_secret"
 
@@ -37,11 +45,16 @@ app.config.update(
 )
 
 
+@contextmanager
 def connect_db():
     db = sqlite3.connect(DB_PATH, timeout=10)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
-    return db
+    try:
+        with db:
+            yield db
+    finally:
+        db.close()
 
 
 def init_db():
@@ -71,6 +84,7 @@ def init_db():
             db.execute("ALTER TABLE shops ADD COLUMN internal_shop_id TEXT")
         if "operator_id" not in columns:
             db.execute("ALTER TABLE shops ADD COLUMN operator_id INTEGER REFERENCES operators(id)")
+        ensure_item_counts_schema(db)
 
 
 def normalize_metadata(shop_id, operator):
@@ -132,8 +146,8 @@ def csrf_token():
 
 def valid_csrf():
     expected = session.get("csrf_token", "")
-    supplied = request.form.get("csrf_token", "")
-    return bool(expected) and hmac.compare_digest(expected, supplied)
+    supplied = request.form.get("csrf_token", "") or request.headers.get("X-CSRF-Token", "")
+    return isinstance(expected, str) and isinstance(supplied, str) and bool(expected) and expected.isascii() and supplied.isascii() and hmac.compare_digest(expected, supplied)
 
 
 @app.before_request
@@ -142,7 +156,8 @@ def local_host_only():
     public_prefix = os.environ.get("ETSY_TOOLS_PUBLIC_PREFIX", "")
     is_public = bool(public_host and public_prefix and
                      request.host == public_host and request.script_root == public_prefix)
-    if request.host not in {"localhost:8765", "127.0.0.1:8765"} and not is_public:
+    local_port = os.environ.get("ETSY_TOOLS_LOCAL_PORT", "8765")
+    if request.host not in {f"localhost:{local_port}", f"127.0.0.1:{local_port}"} and not is_public:
         return "此页面仅供本机安全连接访问。", 400
 
 
@@ -177,9 +192,6 @@ def dashboard():
     selected = request.args.get("metric", "sales")
     if selected not in metrics:
         selected = "sales"
-    scope = request.args.get("scope", "all")
-    if scope not in {"all", "internal", "external"}:
-        scope = "all"
     days = 7 if request.args.get("days") == "7" else 30
     today = datetime.now(timezone(timedelta(hours=8))).date()
     first_day = (today - timedelta(days=days-1)).isoformat()
@@ -196,7 +208,7 @@ def dashboard():
             FROM shops s LEFT JOIN operators o ON o.id=s.operator_id
             WHERE s.deleted_at IS NULL ORDER BY s.id""").fetchall()
         rows = db.execute("""SELECT shop_id,date(datetime(collected_at,'+8 hours')) AS day,
-            collected_at,is_simulated,sales,admirers,item_count,rating,review_count
+            collected_at,is_simulated,sales,admirers,item_count,on_sale_count,rating,review_count
             FROM shop_snapshots
             WHERE date(datetime(collected_at,'+8 hours')) <= ?
             ORDER BY shop_id,day,is_simulated DESC,collected_at""", (today.isoformat(),)).fetchall()
@@ -204,6 +216,8 @@ def dashboard():
             FROM reviews WHERE stars < 5""").fetchall()
         review_totals = {row["shop_id"]: row["n"] for row in db.execute(
             "SELECT shop_id,count(*) AS n FROM reviews GROUP BY shop_id")}
+        review_available = set(review_totals) | {row[0] for row in db.execute(
+            "SELECT DISTINCT shop_id FROM review_sync_runs WHERE status='completed'")}
     finance_by_shop = {}
     if selected == "daily_sales":
         with connect_db() as db:
@@ -218,33 +232,35 @@ def dashboard():
         by_shop.setdefault(row["shop_id"], {})[row["day"]] = row
     cards = []
     for shop in shops:
-        is_internal = bool(shop["internal_shop_id"] or shop["operator_name"])
         if operator_id and str(shop["operator_id"]) != operator_id:
-            continue
-        if scope == "internal" and not is_internal:
-            continue
-        if scope == "external" and is_internal:
             continue
         if selected == "daily_sales":
             start = (today - timedelta(days=days-1)).isoformat()
-            finance_rows = daily_finance(finance_by_shop.get(shop["id"], []))
-            cumulative = finance_by_shop.get(shop["id"], [])
+            cumulative = valid_finance_rows(finance_by_shop.get(shop["id"], []), today.isoformat(), complete=True)
+            finance_rows = daily_finance(cumulative)
             latest = next((r for r in reversed(cumulative) if r["day"] <= today.isoformat()), None)
             latest_ratio = (latest["marketing_usd"] / latest["sales_usd"] * 100
                             if latest and latest["sales_usd"] > 0 else None)
-            cards.append({"shop": shop, "internal": is_internal,
-                          "latest": latest, "latest_ratio": latest_ratio,
-                          "rows": [row for row in finance_rows if start <= row["day"] <= today.isoformat()]})
+            period_rows = [row for row in finance_rows if start <= row["day"] <= today.isoformat()]
+            cards.append({"shop": shop,
+                          "latest": latest, "latest_ratio": latest_ratio, "rows": period_rows,
+                          "has_finance": any(row["sales_usd"] is not None or row["marketing_ratio"] is not None
+                                             for row in period_rows)})
             continue
         daily = list(by_shop.get(shop["id"], {}).values())
+        if selected == "item_count":
+            cards.append({"shop": shop,
+                          "item_counts": build_item_counts(daily, first_day, today.isoformat())})
+            continue
         if selected == "bad_review_count":
             dates = [(today - timedelta(days=i)).isoformat() for i in range(days,-1,-1)]
-            values = [(day, sum(review_day <= day for review_day in bad_by_shop.get(shop["id"], [])), 0)
-                      for day in dates]
+            values = ([(day, sum(review_day <= day for review_day in bad_by_shop.get(shop["id"], []) if review_day), 0)
+                       for day in dates] if shop["id"] in review_available else [])
         else:
             values = [(row["day"], row[selected], row["is_simulated"]) for row in daily if row[selected] is not None]
         current = values[-1][1] if values else None
         current_day = values[-1][0] if values else None
+        current_simulated = bool(values and values[-1][2])
         values = (daily_changes(values, first_day, today.isoformat()) if is_daily else
                   [v for v in values if v[0] >= first_day])
         if values:
@@ -273,18 +289,63 @@ def dashboard():
         else:
             points, change, average, chart_days = "", None, None, []
             axis_ticks = []
-        cards.append({"shop": shop, "internal": is_internal,
+        cards.append({"shop": shop,
                       "points": points, "chart_days": chart_days,
-                      "current": current, "change": change, "average": average,
+                      "current": current, "current_simulated": current_simulated, "change": change, "average": average,
                       "current_day": current_day, "axis_ticks": axis_ticks,
                       "start": values[0][0] if values else None,
                       "end": values[-1][0] if values else None,
                       "days": len(values), "simulated": sum(v[2] for v in values)})
         cards[-1]["review_total"] = review_totals.get(shop["id"], 0)
+        cards[-1]["review_available"] = shop["id"] in review_available
     return render_template("dashboard.html", cards=cards, metrics=metrics,
-                           selected=selected, scope=scope, days=days, is_daily=is_daily,
+                           selected=selected, days=days, is_daily=is_daily,
                            operators=operators, operator_id=operator_id,
-                           today=today.isoformat())
+                           today=today.isoformat(), first_day=first_day, format_value=format_value)
+
+
+@app.get("/shop-data", defaults={"shop_id": None})
+@app.get("/shops/<int:shop_id>/data")
+def shop_data(shop_id):
+    days = 7 if request.args.get("days") == "7" else 30
+    today = datetime.now(timezone(timedelta(hours=8))).date()
+    first_day = (today - timedelta(days=days - 1)).isoformat()
+    with connect_db() as db:
+        shops = db.execute("""SELECT s.id,s.name,s.url,s.internal_shop_id,s.operator_id,
+            o.name AS operator_name FROM shops s LEFT JOIN operators o ON o.id=s.operator_id
+            WHERE s.deleted_at IS NULL ORDER BY s.id""").fetchall()
+        if shop_id is None:
+            requested_id = request.args.get("shop_id")
+            if requested_id:
+                if not requested_id.isascii() or not requested_id.isdigit():
+                    abort(404)
+                shop_id = int(requested_id)
+            elif shops:
+                shop_id = shops[0]["id"]
+            if shop_id is not None:
+                if not any(shop["id"] == shop_id for shop in shops):
+                    abort(404)
+                return redirect(url_for("shop_data", shop_id=shop_id, days=days))
+        shop = next((shop for shop in shops if shop["id"] == shop_id), None)
+        if shop is None:
+            if shop_id is not None:
+                abort(404)
+            return render_template("shop_data.html", shop=None, shops=shops, days=days)
+        snapshots = db.execute("""SELECT id,date(datetime(collected_at,'+8 hours')) AS day,
+            collected_at,is_simulated,sales,admirers,item_count,on_sale_count,rating,review_count
+            FROM shop_snapshots WHERE shop_id=?
+            AND date(datetime(collected_at,'+8 hours')) <= ?""", (shop_id, today.isoformat())).fetchall()
+        finance_rows = db.execute("SELECT * FROM finance_demo WHERE shop_id=? AND day <= ? ORDER BY day",
+                                  (shop_id, today.isoformat())).fetchall()
+        reviews = db.execute("""SELECT stars,COALESCE(review_date,date(datetime(first_seen_at,'+8 hours'))) AS day
+            FROM reviews WHERE shop_id=?""", (shop_id,)).fetchall()
+        review_sync = db.execute("SELECT 1 FROM review_sync_runs WHERE shop_id=? AND status='completed' LIMIT 1",
+                                 (shop_id,)).fetchone()
+    data = build_shop_data(snapshots, finance_rows, [row["day"] for row in reviews if row["stars"] < 5],
+                           first_day, today.isoformat(), review_available=bool(reviews or review_sync))
+    return render_template("shop_data.html", shop=shop, shops=shops, days=days,
+                           internal=bool(shop["internal_shop_id"] or shop["operator_name"]),
+                           review_total=len(reviews), format_value=format_value, **data)
 
 
 @app.get("/shops/<int:shop_id>/reviews")
@@ -378,13 +439,16 @@ def update_shop(shop_id):
 def delete_shop(shop_id):
     if not valid_csrf():
         return "页面已过期，请刷新后重试。", 403
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    with connect_db() as db:
-        cursor = db.execute(
-            "UPDATE shops SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL", (now, shop_id)
-        )
-    if cursor.rowcount:
-        flash("店铺已从采集名单删除；历史记录仍保留。", "success")
+    if request.form.get("confirm_permanent") != "1":
+        flash("删除店铺现在会永久清除数据库关联数据。请刷新页面并完成永久删除确认后再操作。", "error")
+        return redirect(url_for("index"), code=303)
+    try:
+        removed = Store(DB_PATH).delete_shop(shop_id)
+    except QueueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("index"), code=303)
+    if removed:
+        flash("店铺及其数据库中的指标、评价、财务、刷新任务和独占采集批次已永久删除；其他店铺数据不受影响。", "success")
     else:
         flash("这家店铺已不在采集名单中。", "info")
     return redirect(url_for("index"), code=303)
@@ -400,6 +464,12 @@ def healthz():
     with connect_db() as db:
         db.execute("SELECT 1").fetchone()
     return {"status": "ok"}
+
+
+
+@app.context_processor
+def shop_action_context():
+    return {"shop_csrf_token": csrf_token()}
 
 
 init_db()

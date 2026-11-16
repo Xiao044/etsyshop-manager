@@ -1,10 +1,16 @@
+window.initFinanceCharts = () => {
 document.querySelectorAll('.finance-chart').forEach((el) => {
+  if (el.dataset.chartInitialized) return;
+  el.dataset.chartInitialized = '1';
   const rows = JSON.parse(el.dataset.rows);
   if (!rows.length) { el.textContent = '暂无数据'; return; }
   const money = value => value === null ? '—' : `$${value.toFixed(2)}`;
   const ratio = value => value === null ? '—' : `${value.toFixed(1)}%`;
   const description = r => `${r.day} ｜ Sales ${money(r.sales_usd)} ｜ Net Profit ${money(r.net_profit_usd)} ｜ Marketing/Sales（月累计）${ratio(r.marketing_ratio)}`;
   const last = rows.at(-1);
+  const shownValues = row => [row.day, `Sales：${money(row.sales_usd)}`, `Net Profit：${money(row.net_profit_usd)}`, `Marketing/Sales：${ratio(row.marketing_ratio)}`];
+  const latest = rows.findLast(row => [row.sales_usd, row.net_profit_usd, row.marketing_ratio].some(Number.isFinite)) ?? last;
+  const initial = shownValues(latest);
   const average = key => {
     const valid = rows.map(r => r[key]).filter(value => Number.isFinite(value));
     return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null;
@@ -32,16 +38,16 @@ document.querySelectorAll('.finance-chart').forEach((el) => {
       return `${command}${x(i)},${s.scale(r[s.key])}`;
     }).join(' ');
   };
-  el.innerHTML = `<svg viewBox="0 0 740 265" width="100%" role="img" aria-label="每日 Sales、Net Profit 和 Marketing/Sales 走势"><g font-size="12" fill="#8994a1">${[0,1,2,3,4].map(i => `<line x1="65" x2="665" y1="${220-i*45}" y2="${220-i*45}" stroke="#edf0f3"/><text x="0" y="${224-i*45}">$${Math.round(lo+(hi-lo)*i/4)}</text><text x="680" y="${224-i*45}">${(rlo+(rhi-rlo)*i/4).toFixed(0)}%</text>`).join('')}<text x="65" y="250">${rows[0].day}</text><text x="575" y="250">${last.day}</text></g>${series.map(s => `<path d="${path(s)}" fill="none" stroke="${s.color}" stroke-width="3" stroke-dasharray="${s.dash || ''}"/>`).join('')}${rows.map((r,i) => {
+  el.innerHTML = `<svg viewBox="0 0 740 265" width="100%" role="img" aria-label="每日 Sales、Net Profit 和 Marketing/Sales 走势"><g class="chart-axis" font-size="12" fill="#8994a1">${[0,1,2,3,4].map(i => `<line x1="65" x2="665" y1="${220-i*45}" y2="${220-i*45}" stroke="#edf0f3"/><text x="56" y="${220-i*45}" dy=".33em" text-anchor="end">$${Math.round(lo+(hi-lo)*i/4)}</text><text x="674" y="${220-i*45}" dy=".33em">${(rlo+(rhi-rlo)*i/4).toFixed(0)}%</text>`).join('')}<text x="65" y="250">${rows[0].day}</text><text x="665" y="250" text-anchor="end">${last.day}</text></g>${series.map(s => `<path d="${path(s)}" fill="none" stroke="${s.color}" stroke-width="3" stroke-dasharray="${s.dash || ''}"/>`).join('')}${rows.map((r,i) => {
     const left = i === 0 ? 55 : (x(i-1)+x(i))/2;
     const right = i === rows.length-1 ? 675 : (x(i)+x(i+1))/2;
     return `<rect x="${left}" y="25" width="${right-left}" height="200" fill="transparent" data-i="${i}" tabindex="0" aria-label="${description(r)}"></rect>`;
-  }).join('')}${series.map((s,i) => `<circle data-dot="${i}" r="10" fill="${s.color}" stroke="white" stroke-width="2" visibility="hidden" pointer-events="none"/>`).join('')}</svg><div class="finance-tip" aria-live="polite"><div>日期：—</div><div class="finance-daily-row"><span class="finance-daily-value">Sales：—</span><span class="finance-average">日均 ${averageSales}</span></div><div class="finance-daily-row"><span class="finance-daily-value">Net Profit：—</span><span class="finance-average">日均 ${averageProfit}</span></div><div>Marketing/Sales（月累计）：—</div></div>`;
+  }).join('')}${series.map((s,i) => `<circle data-dot="${i}" r="10" fill="${s.color}" stroke="white" stroke-width="2" visibility="hidden" pointer-events="none"/>`).join('')}</svg><div class="finance-tip" aria-live="polite"><div>${initial[0]}</div><div class="finance-daily-row"><span class="finance-daily-value">${initial[1]}</span><span class="finance-average">日均 ${averageSales}</span></div><div class="finance-daily-row"><span class="finance-daily-value">${initial[2]}</span><span class="finance-average">日均 ${averageProfit}</span></div><div>${initial[3]}</div></div>`;
   const tip = el.querySelector('.finance-tip');
   el.querySelectorAll('[data-i]').forEach(rect => {
     const show = () => {
       const index = Number(rect.dataset.i), r = rows[index];
-      const values = [`日期：${r.day}`, `Sales：${money(r.sales_usd)}`, `Net Profit：${money(r.net_profit_usd)}`, `Marketing/Sales（月累计）：${ratio(r.marketing_ratio)}`];
+      const values = shownValues(r);
       [...tip.children].forEach((line, i) => {
         const value = line.querySelector('.finance-daily-value');
         (value || line).textContent = values[i];
@@ -56,3 +62,6 @@ document.querySelectorAll('.finance-chart').forEach((el) => {
   });
   el.addEventListener('mouseleave', () => el.querySelectorAll('[data-dot]').forEach(dot => dot.setAttribute('visibility','hidden')));
 });
+
+};
+window.initFinanceCharts();

@@ -1,0 +1,13 @@
+{% macro heading(card, days) -%}
+<div class="chart-heading">
+  <div class="dashboard-card-identity">
+    <h2>{% if card.shop.internal_shop_id %}{{ card.shop.internal_shop_id }} {% endif %}{{ card.shop.name }}</h2>
+    
+    {% if card.shop.operator_name %}<span class="operator-tag">{{ card.shop.operator_name }}</span>{% endif %}
+  </div>
+  <div class="dashboard-card-side">
+    <a class="shop-data-link" href="{{ url_for('shop_data', shop_id=card.shop.id, days=days) }}" aria-label="查看 {{ card.shop.name }} 的单店详情">单店详情 <span aria-hidden="true">→</span></a>
+    {% if caller is defined %}{{ caller() }}{% endif %}
+  </div>
+</div>
+{%- endmacro %}

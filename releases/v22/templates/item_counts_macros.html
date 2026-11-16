@@ -1,0 +1,35 @@
+{% macro summary(counts, day, format_value, compact=false) -%}
+<div class="product-period">当日净增{% if not compact %} <time datetime="{{ day }}">{{ day[5:] }}</time>{% endif %}</div>
+<div class="product-summary{% if compact %} product-summary-compact{% endif %}" role="group" aria-label="All 与 On sale 数量">
+  {% for item in counts.series %}
+  <div class="product-count product-{{ item.style }}" data-counter="{{ item.key }}">
+    <div class="product-count-name"><strong>{{ item.short_label }}</strong><span>{{ item.label }}</span></div>
+    <strong class="product-delta{% if item.today_value is none %} product-missing{% elif item.today_simulated %} product-simulated{% endif %}">{% if item.today_value is not none and item.today_value > 0 %}+{% endif %}{{ format_value(item.today_value) }}</strong>
+    {% if item.today_simulated %}<span class="data-badge simulated">模拟</span>{% endif %}
+    <div class="product-total"><span>总数</span><strong{% if item.total_simulated %} class="product-simulated"{% elif item.total_value is none %} title="尚未采集"{% endif %}>{{ format_value(item.total_value) }}</strong></div>
+    {% if item.total_simulated or (item.total_day and (not compact or item.total_day != day)) %}
+    <div class="product-date">{% if item.total_day and (not compact or item.total_day != day) %}<span>截至</span> <time datetime="{{ item.total_day }}">{{ item.total_day }}</time>{% endif %}{% if item.total_simulated %} <span>模拟总值</span>{% endif %}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro chart(counts, first_day, last_day, format_value) -%}
+{% if counts.chart_days %}
+<div class="product-legend" aria-label="图表图例"><span class="product-all">All · 所有品类</span><span class="product-sale">On sale · 促销商品</span></div>
+<div class="chart-area product-chart">
+  <svg class="trend-chart" viewBox="0 0 740 205" role="img" aria-label="All 与 On sale 当日净增量走势">
+    <g class="chart-axis" fill="#8994a1" font-size="12"><text x="80" y="18">当日净增量</text>{% for tick in counts.axis_ticks %}<line x1="80" x2="716" y1="{{ tick.y }}" y2="{{ tick.y }}" stroke="#e8edf0"/><text x="66" y="{{ tick.y }}" dy=".33em" text-anchor="end">{{ tick.label }}</text>{% endfor %}<text x="80" y="196">{{ first_day[5:] }}</text><text x="716" y="196" text-anchor="end">{{ last_day[5:] }}</text></g>
+    {% for item in counts.series %}
+    <g class="product-series product-{{ item.style }}" data-series="{{ item.key }}"><path d="{{ item.points }}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"{% if item.style == 'sale' %} stroke-dasharray="7 5"{% endif %}/>{% for point in item.chart_days %}<circle cx="{{ point.x }}" cy="{{ point.y }}" r="{{ 5 if item.style == 'all' else 3 }}" fill="{{ '#fff' if item.style == 'all' else 'currentColor' }}" stroke="currentColor" stroke-width="2"{% if point.simulated %} opacity=".55"{% endif %}/>{% endfor %}</g>
+    {% endfor %}
+    {% for point in counts.chart_days %}<rect class="chart-zone" x="{{ point.zone_x }}" y="25" width="{{ point.zone_width }}" height="150" tabindex="0" data-x="{{ point.x }}" data-y="{{ point.y }}" data-label="" data-day="{{ point.day }}" data-value="{{ point.formatted }}" data-kind="{{ point.kind }}" aria-label="{{ point.day }}，{{ point.formatted }}{% if point.kind %}，{{ point.kind }}{% endif %}"></rect>{% endfor %}
+    <circle class="chart-active-dot" r="7" cx="0" cy="0"/>
+  </svg>
+  {% set last_point = counts.chart_days|last %}
+  <div class="chart-readout" aria-live="polite"><div class="readout-date">{{ last_point.day }}</div><div class="readout-value">{{ last_point.formatted }}</div><div class="readout-kind">{{ last_point.kind }}</div></div>
+</div>
+<div class="product-stats">{% for item in counts.series %}{% if item.count %}<div class="product-{{ item.style }}"><strong>{{ item.short_label }}</strong><span>区间净增 {{ format_value(item.stat_value) }}</span><span>日均 {{ '%.2f'|format(item.average) }}</span>{% if item.simulated_days %}<span class="data-badge simulated">含模拟</span>{% endif %}</div>{% endif %}{% endfor %}</div>
+{% else %}<div class="product-empty">暂无商品净增走势</div>{% endif %}
+{%- endmacro %}

@@ -1,5 +1,5 @@
 <nav class="tool-nav" aria-label="工具菜单">
-{% for endpoint, label in [('index', '店铺管理'), ('dashboard', '数据看板')] %}
+{% for endpoint, label in [('dashboard', '数据看板'), ('shop_data', '单店数据'), ('index', '店铺管理')] %}
 <a class="side-item side-link{% if request.endpoint == endpoint %} active{% endif %}" href="{{ url_for(endpoint) }}"{% if request.endpoint == endpoint %} aria-current="page"{% endif %}>{{ label }}</a>
 {% endfor %}
 </nav>

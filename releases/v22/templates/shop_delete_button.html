@@ -1,0 +1,5 @@
+<form class="shop-delete-form" action="{{ url_for('delete_shop', shop_id=delete_shop.id) }}" method="post" data-delete-shop-form data-shop-name="{{ delete_shop.name }}">
+  <input type="hidden" name="confirm_permanent" value="0">
+  <input type="hidden" name="csrf_token" value="{{ shop_csrf_token }}">
+  <button class="shop-delete-button" type="submit" title="永久删除店铺及数据库关联数据，无法撤销" aria-label="永久删除店铺 {{ delete_shop.name }}">永久删除店铺</button>
+</form>

@@ -1,9 +1,12 @@
+window.initDashboardCharts = () => {
 document.querySelectorAll('.chart-area').forEach((area) => {
+  if (area.dataset.chartInitialized) return;
+  area.dataset.chartInitialized = '1';
   const readout = area.querySelector('.chart-readout');
   const dot = area.querySelector('.chart-active-dot');
   const show = (point) => {
-    readout.querySelector('.readout-date').textContent = `日期：${point.dataset.day}`;
-    readout.querySelector('.readout-value').textContent = `${point.dataset.label}：${point.dataset.value}`;
+    readout.querySelector('.readout-date').textContent = point.dataset.day;
+    readout.querySelector('.readout-value').textContent = point.dataset.label ? `${point.dataset.label}：${point.dataset.value}` : point.dataset.value;
     readout.querySelector('.readout-kind').textContent = point.dataset.kind;
     dot.setAttribute('cx', point.dataset.x);
     dot.setAttribute('cy', point.dataset.y);
@@ -18,12 +21,15 @@ document.querySelectorAll('.chart-area').forEach((area) => {
   area.addEventListener('mouseleave', hide);
 });
 
-const operatorSelect = document.querySelector('#operator-filter');
-if (operatorSelect) {
-  operatorSelect.addEventListener('change', () => operatorSelect.form.requestSubmit());
-}
+document.querySelectorAll('#operator-filter, #shop-data-select').forEach((select) => {
+  if (select.dataset.controlInitialized) return;
+  select.dataset.controlInitialized = '1';
+  select.addEventListener('change', () => select.form.requestSubmit());
+});
 
 document.querySelectorAll('.review-disclosure').forEach((details) => {
+  if (details.dataset.disclosureInitialized) return;
+  details.dataset.disclosureInitialized = '1';
   details.addEventListener('toggle', async () => {
     if (!details.open || details.dataset.loaded) return;
     const body = details.querySelector('.review-list-body');
@@ -34,7 +40,10 @@ document.querySelectorAll('.review-disclosure').forEach((details) => {
       body.innerHTML = await response.text();
       details.dataset.loaded = '1';
     } catch {
-      body.textContent = '评价读取失败，请关闭后重试。';
+      body.textContent = '读取失败，请重新展开。';
     }
   });
 });
+
+};
+window.initDashboardCharts();
